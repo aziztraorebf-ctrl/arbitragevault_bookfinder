@@ -1,9 +1,7 @@
 from sqlalchemy import Column, Integer, String, Decimal, DateTime, ForeignKey, Text, UniqueConstraint
-from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from datetime import datetime
-
-Base = declarative_base()
+from .base import Base
 
 class Analysis(Base):
     """Analysis model for book arbitrage opportunities"""
@@ -24,7 +22,7 @@ class Analysis(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
-    # Unique constraint pour éviter les doublons (utilisé dans PATCH 4)
+    # ✅ Unique constraint pour éviter les doublons (PATCH 4)
     __table_args__ = (
         UniqueConstraint('batch_id', 'isbn_or_asin', name='uq_batch_isbn'),
     )
