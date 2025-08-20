@@ -6,17 +6,17 @@ from ....core.database import get_db as get_sync_db, SessionLocal
 from ....config.settings import settings
 
 # ============================================================================
-# ASYNC DATABASE SESSION (1 session par requête via yield)
+# DATABASE SESSION (1 session par requête via yield)
 # ============================================================================
 
-# Create async engine if needed (future enhancement)
-# For Phase 1.3, we'll use sync sessions wrapped appropriately
+# For Phase 1.3, we use sync sessions to match our repository layer
+# Future enhancement: Move to async SQLAlchemy for true async operations
 
-async def get_db() -> AsyncGenerator[Session, None]:
-    """Dependency to get database session for FastAPI
+def get_sync_db_dependency() -> Generator[Session, None, None]:
+    """Dependency to get synchronous database session for FastAPI
     
-    Note: Using synchronous session for Phase 1.3
-    Future: Migrate to async SQLAlchemy for true async operations
+    Provides 1 session per request via yield pattern.
+    Session is automatically closed after request completion.
     """
     db = SessionLocal()
     try:
@@ -25,7 +25,15 @@ async def get_db() -> AsyncGenerator[Session, None]:
         db.close()
 
 
-# Alternative sync version for immediate use
-def get_sync_db_dependency() -> Generator[Session, None, None]:
-    """Synchronous database dependency"""
-    return get_sync_db()
+# Alternative async wrapper (future enhancement)
+async def get_async_db_dependency() -> AsyncGenerator[Session, None]:
+    """Async wrapper for database session
+    
+    Note: Currently wraps sync session for Phase 1.3 compatibility
+    Future: Replace with native async SQLAlchemy session
+    """
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
