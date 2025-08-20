@@ -3,10 +3,8 @@ from decimal import Decimal
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-# Import all models and repositories
-from backend.app.models.user import User, UserRole, Base as UserBase
-from backend.app.models.batch import Batch, BatchStatus, Base as BatchBase
-from backend.app.models.analysis import Analysis, Base as AnalysisBase
+# Import models and repositories with corrected paths
+from backend.app.models import Base, User, UserRole, Batch, BatchStatus, Analysis
 from backend.app.repositories.analysis import AnalysisRepository
 
 @pytest.fixture(scope="session")
@@ -14,10 +12,8 @@ def engine():
     """Create test database engine"""
     engine = create_engine("sqlite:///:memory:", echo=False)
     
-    # Create all tables from all models
-    UserBase.metadata.create_all(engine)
-    BatchBase.metadata.create_all(engine) 
-    AnalysisBase.metadata.create_all(engine)
+    # Create all tables from shared Base
+    Base.metadata.create_all(engine)
     
     yield engine
     engine.dispose()
@@ -34,7 +30,7 @@ def db_session(engine):
     session.close()
 
 class TestSmokeLocal:
-    """Smoke test: création user → batch → 3 analyses → list/filter/delete"""
+    """✅ Smoke test: création user → batch → 3 analyses → list/filter/delete"""
     
     def test_complete_workflow_smoke(self, db_session):
         """Test complet du workflow business"""
@@ -151,7 +147,7 @@ class TestSmokeLocal:
         high_roi_isbns = {item.isbn_or_asin for item in filtered_page.items}
         assert high_roi_isbns == {"ISBN001", "ISBN003"}
         
-        # ✅ STEP 6: Test ISBN list filtering
+        # ✅ STEP 6: Test ISBN list filtering (PATCH 1)
         isbn_page = analysis_repo.list_filtered(
             batch_id=batch.id,
             isbn_list=["ISBN001", "ISBN002"]  # Exclut ISBN003
@@ -161,7 +157,7 @@ class TestSmokeLocal:
         isbn_filtered = {item.isbn_or_asin for item in isbn_page.items}
         assert isbn_filtered == {"ISBN001", "ISBN002"}
         
-        # ✅ STEP 7: Test sorting par velocity_score desc
+        # ✅ STEP 7: Test sorting par velocity_score desc (PATCH 2)
         sorted_page = analysis_repo.list_filtered(
             batch_id=batch.id,
             sort_by="velocity_score",
@@ -174,7 +170,7 @@ class TestSmokeLocal:
         assert sorted_page.items[1].isbn_or_asin == "ISBN002" 
         assert sorted_page.items[2].isbn_or_asin == "ISBN003"
         
-        # ✅ STEP 8: Test top_n_for_batch strategies
+        # ✅ STEP 8: Test top_n_for_batch strategies (PATCH 3)
         
         # ROI strategy - ISBN003 first (67.8%)
         top_roi = analysis_repo.top_n_for_batch(
@@ -194,7 +190,7 @@ class TestSmokeLocal:
         assert len(top_velocity) == 2
         assert top_velocity[0].isbn_or_asin == "ISBN001"  # 72.3 velocity
         
-        # Balanced strategy (60% ROI + 40% velocity)
+        # Balanced strategy (60% ROI + 40% velocity) - PATCH 3
         # ISBN001: 45.5 * 0.6 + 72.3 * 0.4 = 27.3 + 28.92 = 56.22
         # ISBN002: 32.1 * 0.6 + 58.9 * 0.4 = 19.26 + 23.56 = 42.82
         # ISBN003: 67.8 * 0.6 + 41.2 * 0.4 = 40.68 + 16.48 = 57.16
@@ -246,6 +242,39 @@ class TestSmokeLocal:
         assert len(empty_page.items) == 0
         
         print("✅ SMOKE TEST COMPLET - Tous les workflows validés !")
+        
+    def test_patch4_duplicate_detection(self, db_session):
+        """Test PATCH 4: DuplicateIsbnInBatchError detection"""
+        
+        # Créer batch
+        batch = Batch(name="Duplicate Test", status=BatchStatus.RUNNING)
+        db_session.add(batch)
+        db_session.commit()
+        
+        analysis_repo = AnalysisRepository(db_session)
+        
+        # Créer première analyse
+        analysis1 = analysis_repo.create_analysis(
+            batch_id=batch.id,
+            isbn_or_asin="TESTISBN001",
+            roi_percent=Decimal("25.0")
+        )
+        db_session.commit()
+        
+        # Tenter de créer duplicate - devrait lever exception
+        from backend.app.repositories.base import DuplicateIsbnInBatchError
+        
+        with pytest.raises(DuplicateIsbnInBatchError) as exc_info:
+            analysis_repo.create_analysis(
+                batch_id=batch.id,
+                isbn_or_asin="TESTISBN001",  # Même ISBN, même batch
+                roi_percent=Decimal("35.0")
+            )
+        
+        assert "TESTISBN001" in str(exc_info.value)
+        assert "batch" in str(exc_info.value).lower()
+        
+        print("✅ PATCH 4 - DuplicateIsbnInBatchError validation OK")
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "-s"])
