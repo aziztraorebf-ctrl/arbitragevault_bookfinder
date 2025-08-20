@@ -1,25 +1,37 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+import logging
 
 from .api.v1.routers import analyses, batches, health
 from .core.database import create_tables
+from .core.middleware import ErrorHandlingMiddleware, RequestLoggingMiddleware
 from .config.settings import settings
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan events"""
     # Startup
-    print("🚀 ArbitrageVault BookFinder API starting...")
+    logger.info("🚀 ArbitrageVault BookFinder API starting...")
+    logger.info(f"📊 Version: {settings.app.version}")
+    logger.info(f"🔧 Debug mode: {settings.app.debug}")
+    
     if settings.app.debug:
-        print("📊 Creating database tables (development mode)")
+        logger.info("💾 Creating database tables (development mode)")
         create_tables()
     
     yield
     
     # Shutdown
-    print("🛑 ArbitrageVault BookFinder API shutting down...")
+    logger.info("🛑 ArbitrageVault BookFinder API shutting down...")
 
 
 def create_app() -> FastAPI:
@@ -34,6 +46,12 @@ def create_app() -> FastAPI:
         redoc_url="/redoc" if not settings.is_production else None,
         openapi_url="/openapi.json" if not settings.is_production else None,
     )
+    
+    # Add custom middleware (order matters - first added = outer layer)
+    app.add_middleware(ErrorHandlingMiddleware)
+    
+    if settings.app.debug:
+        app.add_middleware(RequestLoggingMiddleware)
     
     # CORS configuration for frontend
     app.add_middleware(
@@ -67,6 +85,17 @@ def create_app() -> FastAPI:
         prefix="/api/v1/health",
         tags=["health"]
     )
+    
+    # Root endpoint
+    @app.get("/", tags=["root"])
+    async def root():
+        """Root endpoint with API information"""
+        return {
+            "message": "ArbitrageVault BookFinder API",
+            "version": settings.app.version,
+            "status": "running",
+            "docs_url": "/docs" if not settings.is_production else None
+        }
     
     return app
 
