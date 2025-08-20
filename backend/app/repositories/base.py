@@ -77,7 +77,7 @@ class BaseRepository(Generic[T]):
         else:
             raise ValueError(f"Unsupported filter condition: {criteria.condition}")
     
-    async def _paginate(
+    def _paginate(  # ✅ FIX: Remove async for synchronous SQLAlchemy
         self, 
         query, 
         page: int, 
